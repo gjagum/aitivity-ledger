@@ -40,7 +40,7 @@ export function Layout({ children }: { children: ReactNode }) {
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
       `}>
         <div className="flex items-center justify-between h-16 px-6 border-b border-gray-200">
-          <h1 className="text-lg font-bold text-gray-900">Activity Ledger</h1>
+          <h1 className="text-lg font-bold text-gray-900">AItivity Ledger</h1>
           <button className="lg:hidden" onClick={() => setSidebarOpen(false)}>
             <X className="w-5 h-5" />
           </button>
@@ -97,7 +97,7 @@ export function Layout({ children }: { children: ReactNode }) {
           <button className="lg:hidden mr-4" onClick={() => setSidebarOpen(true)}>
             <Menu className="w-5 h-5 text-gray-600" />
           </button>
-          <h2 className="text-lg font-semibold text-gray-900">Activity Ledger</h2>
+          <h2 className="text-lg font-semibold text-gray-900">AItivity Ledger</h2>
         </header>
 
         <main className="flex-1 overflow-auto p-6 lg:p-8">

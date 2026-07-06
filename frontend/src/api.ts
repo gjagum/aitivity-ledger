@@ -29,7 +29,12 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 
   if (res.status === 401) {
     clearApiKey();
-    window.location.href = '/';
+    // Bounce home on auth failure, but never reload to the page we're already
+    // on — otherwise an authenticated home route that 401s would reload itself
+    // forever (visible as constant flickering).
+    if (window.location.pathname !== '/') {
+      window.location.href = '/';
+    }
     throw new Error('Unauthorized');
   }
 

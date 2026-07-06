@@ -8,9 +8,9 @@ async function seed() {
     where: { slug: 'demo' },
     update: {},
     create: { slug: 'demo', name: 'Demo Project' },
-    select: { id: true, api_key: true },
+    select: { id: true, apiKey: true },
   });
-  console.log(`Tenant: ${tenant.id} (API key: ${tenant.api_key})`);
+  console.log(`Tenant: ${tenant.id} (API key: ${tenant.apiKey})`);
 
   // Create sample agents
   const agentNames = ['main', 'feat-auth', 'feat-ui'];
@@ -146,8 +146,8 @@ async function seed() {
   }
 
   console.log(`Seeded ${sampleTasks.length} sample tasks with activity log.`);
-  console.log(`\nDemo tenant API key: ${tenant.api_key}`);
-  console.log(`Try: curl -H "Authorization: Bearer ${tenant.api_key}" http://localhost:3001/tasks`);
+  console.log(`\nDemo tenant API key: ${tenant.apiKey}`);
+  console.log(`Try: curl -H "Authorization: Bearer ${tenant.apiKey}" http://localhost:3001/tasks`);
 
   await prisma.$disconnect();
 }

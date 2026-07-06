@@ -1,9 +1,9 @@
 {
   "tasks": {
-    "dev": "deno run -A npm:prisma@^7 generate && deno run --watch -A src/main.ts",
-    "start": "deno run -A src/main.ts",
-    "mcp": "deno run -A mcp/server.ts",
-    "seed": "deno run -A src/seed.ts",
+    "dev": "deno run -A npm:prisma@^7 generate && deno run --env --watch -A src/main.ts",
+    "start": "deno run --env -A src/main.ts",
+    "mcp": "deno run --env -A mcp/server.ts",
+    "seed": "deno run --env -A src/seed.ts",
     "generate": "deno run -A npm:prisma@^7 generate",
     "migrate": "deno run -A npm:prisma@^7 db push",
     "studio": "deno run -A npm:prisma@^7 studio",
