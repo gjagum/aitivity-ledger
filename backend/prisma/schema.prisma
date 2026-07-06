@@ -1,0 +1,98 @@
+// ============================================================
+// Activity Ledger — Prisma schema
+// Multi-tenant task and activity tracking for AI agents
+// ============================================================
+
+generator client {
+  provider        = "prisma-client"
+  output          = "../generated"
+  runtime         = "deno"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  // gen_random_bytes() (used by Tenant.api_key default) lives in pgcrypto.
+  extensions = [pgcrypto]
+}
+
+// Tenants (organizations / projects)
+model Tenant {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  slug      String   @unique
+  name      String
+  apiKey    String   @unique @default(dbgenerated("encode(gen_random_bytes(32), 'hex')")) @map("api_key")
+  config    Json     @default("{}")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  agents   Agent[]
+  tasks    Task[]
+  activity ActivityLog[]
+
+  @@map("tenants")
+}
+
+// Agents (AI agent identities within a tenant)
+model Agent {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  name        String
+  description String?
+  config      Json     @default("{}")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, name])
+  @@map("agents")
+}
+
+// Tasks — the core document. `data` is the full JSONB payload; the promoted
+// columns (status, agent_name, module, project, started_at, ended_at) mirror
+// values from `data` to support indexed queries (replacing the previous
+// GENERATED ALWAYS columns, which Prisma cannot write to).
+model Task {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId   String    @map("tenant_id") @db.Uuid
+  externalId String?   @map("external_id")
+  data       Json      @default("{}")
+
+  // Promoted (app-maintained) columns extracted from `data`
+  status     String    @default("pending")
+  agentName  String    @map("agent_name")
+  module     String?
+  project    String?
+  startedAt  DateTime? @map("started_at") @db.Timestamptz
+  endedAt    DateTime? @map("ended_at") @db.Timestamptz
+
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  tenant   Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  activity ActivityLog[]
+
+  @@index([tenantId, status])
+  @@index([tenantId, agentName])
+  @@index([tenantId, project])
+  @@index([tenantId, startedAt])
+  @@map("tasks")
+}
+
+// Activity log — append-only event stream
+model ActivityLog {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  taskId    String?  @map("task_id") @db.Uuid
+  agentName String?  @map("agent_name")
+  action    String
+  data      Json     @default("{}")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  task   Task?  @relation(fields: [taskId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, createdAt])
+  @@index([taskId])
+  @@index([agentName])
+  @@map("activity_log")
+}

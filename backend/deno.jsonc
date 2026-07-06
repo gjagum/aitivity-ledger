@@ -1,0 +1,37 @@
+{
+  "tasks": {
+    "dev": "deno run -A npm:prisma@^7 generate && deno run --watch -A src/main.ts",
+    "start": "deno run -A src/main.ts",
+    "mcp": "deno run -A mcp/server.ts",
+    "seed": "deno run -A src/seed.ts",
+    "generate": "deno run -A npm:prisma@^7 generate",
+    "migrate": "deno run -A npm:prisma@^7 db push",
+    "studio": "deno run -A npm:prisma@^7 studio",
+    "check": "deno check src/main.ts"
+  },
+  "imports": {
+    "@prisma/adapter-pg": "npm:@prisma/adapter-pg@^7.8.0",
+    "@prisma/client": "npm:@prisma/client@^7.8.0",
+    "hono": "npm:hono@^4",
+    "prisma": "npm:prisma@^7.8.0",
+    "zod": "npm:zod@^3",
+    "@std/": "jsr:@std/"
+  },
+  "nodeModulesDir": "auto",
+  "compilerOptions": {
+    "strict": true
+  },
+  "lint": {
+    "rules": {
+      "include": ["no-unused-vars"]
+    },
+    "exclude": ["generated/", "node_modules/"]
+  },
+  "fmt": {
+    "lineWidth": 100,
+    "indentWidth": 2,
+    "semiColons": true,
+    "singleQuote": true,
+    "exclude": ["generated/", "node_modules/"]
+  }
+}
