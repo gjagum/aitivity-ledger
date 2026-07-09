@@ -1,3 +1,4 @@
+import { Pool } from 'pg';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../generated/client.ts';
 import type { Prisma } from '../generated/client.ts';
@@ -5,9 +6,16 @@ import type { Prisma } from '../generated/client.ts';
 const connectionString = Deno.env.get('DATABASE_URL') ??
   'postgres://ledger:ledger@localhost:5432/ledger';
 
-// Prisma 7 requires a driver adapter for runtime database connections
-// (the connection URL is no longer read from the schema).
-const adapter = new PrismaPg({ connectionString });
+// Explicit pool — PrismaPg(connectionString) defaults can starve under
+// concurrent dashboard requests (tasks + agents + activity).
+const pool = new Pool({
+  connectionString,
+  max: 10,
+  idleTimeoutMillis: 30_000,
+  connectionTimeoutMillis: 5_000,
+});
+
+const adapter = new PrismaPg(pool);
 
 export const prisma = new PrismaClient({ adapter });
 

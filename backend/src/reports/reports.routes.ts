@@ -56,8 +56,8 @@ reports.get('/agents', async (c) => {
       agent_name,
       MIN(started_at)                                                 AS first_active,
       MAX(started_at)                                                 AS last_active,
-      COUNT(*)                                                        AS total_tasks,
-      COUNT(*) FILTER (WHERE status = 'done')                         AS completed_tasks,
+      COUNT(*)::INT                                                   AS total_tasks,
+      COUNT(*) FILTER (WHERE status = 'done')::INT                    AS completed_tasks,
       AVG(CASE
         WHEN status = 'done' AND started_at IS NOT NULL AND ended_at IS NOT NULL
         THEN EXTRACT(EPOCH FROM (ended_at - started_at))
@@ -69,7 +69,17 @@ reports.get('/agents', async (c) => {
     ORDER BY agent_name
   `;
 
-  return c.json(rows);
+  // pg may still return BigInt for aggregates — coerce for JSON.stringify.
+  const safe = rows.map((row) => ({
+    ...row,
+    total_tasks: Number(row.total_tasks),
+    completed_tasks: Number(row.completed_tasks),
+    avg_duration_seconds: row.avg_duration_seconds == null
+      ? null
+      : Number(row.avg_duration_seconds),
+  }));
+
+  return c.json(safe);
 });
 
 export { reports };

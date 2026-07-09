@@ -13,6 +13,7 @@
     "@prisma/adapter-pg": "npm:@prisma/adapter-pg@^7.8.0",
     "@prisma/client": "npm:@prisma/client@^7.8.0",
     "hono": "npm:hono@^4",
+    "pg": "npm:pg@^8.22.0",
     "prisma": "npm:prisma@^7.8.0",
     "zod": "npm:zod@^3",
     "@std/": "jsr:@std/"
