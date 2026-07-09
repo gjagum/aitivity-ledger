@@ -10,11 +10,15 @@ import {
   LogOut,
   Menu,
   X,
+  Users,
+  Lock,
 } from 'lucide-react';
 import { hasApiKey, setApiKey, clearApiKey } from '../api.ts';
 
 const navItems = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard', end: true },
+  { to: '/sessions', icon: Users, label: 'Sessions' },
+  { to: '/locks', icon: Lock, label: 'File Locks' },
   { to: '/tasks', icon: ListTodo, label: 'Tasks' },
   { to: '/reports/weekly', icon: BarChart3, label: 'Weekly Report' },
   { to: '/activity', icon: Activity, label: 'Activity Log' },

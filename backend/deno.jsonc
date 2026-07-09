@@ -2,7 +2,7 @@
   "tasks": {
     "dev": "deno run -A npm:prisma@^7 generate && deno run --env --watch -A src/main.ts",
     "start": "deno run --env -A src/main.ts",
-    "mcp": "deno run --env -A mcp/server.ts",
+    "mcp": "deno run --env -A mcp/stdio.ts",
     "seed": "deno run --env -A src/seed.ts",
     "generate": "deno run -A npm:prisma@^7 generate",
     "migrate": "deno run -A npm:prisma@^7 db push",
@@ -12,6 +12,7 @@
   "imports": {
     "@prisma/adapter-pg": "npm:@prisma/adapter-pg@^7.8.0",
     "@prisma/client": "npm:@prisma/client@^7.8.0",
+    "@modelcontextprotocol/sdk": "npm:@modelcontextprotocol/sdk@1.25.3",
     "hono": "npm:hono@^4",
     "pg": "npm:pg@^8.22.0",
     "prisma": "npm:prisma@^7.8.0",

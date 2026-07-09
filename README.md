@@ -14,38 +14,54 @@ cd backend && deno run -A src/migrate.ts
 # Seed sample data
 deno run -A src/seed.ts
 
-# Start API server
-deno run -A src/main.ts
-
-# Start MCP server (separate terminal)
-LEDGER_API_KEY=<your-api-key> deno run -A mcp/server.ts
+# Start API server (includes MCP at /mcp)
+deno task start
 ```
 
 ## Architecture
 
 ```
-┌─────────────┐     ┌──────────────┐     ┌────────────────┐
-│  Projects   │────▶│  REST API    │────▶│  PostgreSQL    │
-│  (opencode) │     │  (Hono)      │     │  + JSONB       │
-└──────┬──────┘     └──────┬───────┘     └────────────────┘
-       │                   │
-       │     ┌─────────────▼─────┐
-       └────▶│  MCP Server       │
-             │  (stdio transport)│
-             └───────────────────┘
+┌─────────────┐     ┌──────────────────────────┐     ┌────────────────┐
+│  Cursor /   │────▶│  REST API + MCP (/mcp)   │────▶│  PostgreSQL    │
+│  Agents     │     │  (Hono, same process)    │     │                │
+└─────────────┘     └──────────────────────────┘     └────────────────┘
 ```
 
 ## Vertical Slices
 
-| Slice     | Backend              | Frontend                    |
-|-----------|----------------------|-----------------------------|
-| Tasks     | `tasks/` slice       | `tasks/pages/` + `components/` |
-| Reports   | `reports/` slice     | `reports/pages/` + `components/` |
-| Activity  | `activity/` slice    | Built into reports           |
-| Agents    | `agents/` slice      | `agents/pages/` + `components/` |
-| Tenants   | `tenants/` slice     | Sidebar API key form         |
+| Slice       | Backend                 | Frontend                         |
+|-------------|-------------------------|----------------------------------|
+| Sessions    | `sessions/`             | `sessions/pages/`                |
+| Locks       | `locks/`                | `locks/pages/`                   |
+| Developers  | `developers/`           | (via sessions)                   |
+| Tasks       | `tasks/`                | `tasks/pages/`                   |
+| Reports     | `reports/`              | `reports/pages/`                 |
+| Activity    | `activity/`             | Activity page                    |
+| Agents      | `agents/`               | `agents/pages/`                  |
+| Tenants     | `tenants/`              | Sidebar API key form             |
+| MCP         | `mcp/` (mounted `/mcp`) | —                                |
 
 ## API Endpoints
+
+### Sessions (governance — replaces TEAM_ACTIVITY_REPORT.md)
+- `GET /sessions` — list (`status`, `developer_id`, `limit`, `offset`)
+- `GET /sessions/:id` — session with requirements + files
+- `POST /sessions` — open session (`developer_name`, `module`, `branch`, `plan`)
+- `PATCH /sessions/:id` — update session fields
+- `POST /sessions/:id/close` — close session + release its locks
+- `POST /sessions/:id/requirements` — upsert REQ
+- `POST /sessions/:id/files` — record file touched
+
+### Locks (governance — replaces FILE_OWNERSHIP.md)
+- `GET /locks` — active locks
+- `POST /locks` — claim lock (409 on conflict)
+- `POST /locks/check` — `{ paths: string[] }`
+- `DELETE /locks?path=…` — release lock
+
+### Developers
+- `GET /developers` — list
+- `POST /developers` — create
+- `PATCH /developers/:id` — update
 
 ### Tasks
 - `GET /tasks` — list with filters (status, agent, project, limit, offset)
@@ -55,42 +71,50 @@ LEDGER_API_KEY=<your-api-key> deno run -A mcp/server.ts
 - `POST /tasks/:id/progress` — append progress entry
 - `DELETE /tasks/:id` — delete task
 
-### Reports
-- `GET /reports/weekly` — per-agent summary for current week
-- `GET /reports/weekly/detail` — all tasks this week
-- `GET /reports/agents` — lifetime agent stats
+### Reports / Activity / Agents / Tenants
+Unchanged from v0.1 (`/reports/*`, `/activity`, `/agents`, `/tenants`).
 
-### Activity
-- `GET /activity` — recent activity log (limit, agent, action filters)
+## Connect from Cursor (MCP)
 
-### Agents
-- `GET /agents` — list agents
-- `POST /agents` — register agent
-- `PATCH /agents/:name` — update agent
+MCP is served **in-process** on the API:
 
-### Tenants
-- `POST /tenants` — create tenant (returns API key)
-- `GET /tenants/:id` — get tenant info
+```
+http://localhost:3001/mcp
+Authorization: Bearer <tenant-api-key>
+```
 
-## Connect from Other Projects
+Cursor `mcp.json` (HTTP / remote):
 
-### Via MCP (AI-native)
-Add to your project's `opencode.json`:
 ```json
 {
-  "mcp": {
-    "activity-ledger": {
-      "type": "remote",
-      "url": "https://your-server.com/mcp",
+  "mcpServers": {
+    "aitivity-ledger": {
+      "url": "http://localhost:3001/mcp",
       "headers": { "Authorization": "Bearer <tenant-api-key>" }
     }
   }
 }
 ```
 
+Optional stdio proxy (API must already be running):
+
+```bash
+LEDGER_API_KEY=<key> deno task mcp
+```
+
+### Governance tools (P0)
+| Tool | Purpose |
+|------|---------|
+| `session_start` / `session_end` / `session_list` / `session_get` / `session_update` | Developer sessions |
+| `req_upsert` / `session_file_add` | Requirements + files modified |
+| `lock_claim` / `lock_release` / `lock_check` / `lock_list` | File ownership |
+| `developer_list` / `developer_ensure` | Human developers |
+| `task_*` | Existing AI-agent task tools |
+
 ### Via REST API
 ```bash
-curl -H "Authorization: Bearer <api-key>" http://localhost:3001/tasks
+curl -H "Authorization: Bearer <api-key>" http://localhost:3001/sessions?status=open
+curl -H "Authorization: Bearer <api-key>" http://localhost:3001/locks
 ```
 
 ## JSONB Data Shape

@@ -98,9 +98,120 @@ export const api = {
     list: () => request<unknown[]>('GET', '/agents'),
   },
 
+  // Developers
+  developers: {
+    list: () => request<Developer[]>('GET', '/developers'),
+    create: (data: { name: string; github_user?: string }) =>
+      request<Developer>('POST', '/developers', data),
+  },
+
+  // Sessions (governance)
+  sessions: {
+    list: (params?: { status?: string; developer_id?: string; limit?: number; offset?: number }) => {
+      const q = new URLSearchParams();
+      if (params?.status) q.set('status', params.status);
+      if (params?.developer_id) q.set('developer_id', params.developer_id);
+      if (params?.limit) q.set('limit', String(params.limit));
+      if (params?.offset) q.set('offset', String(params.offset));
+      return request<{ items: DevSession[]; count: number }>(`GET`, `/sessions?${q}`);
+    },
+    get: (id: string) => request<DevSession>('GET', `/sessions/${id}`),
+    open: (data: {
+      developer_name: string;
+      module: string;
+      branch: string;
+      plan?: string[];
+      github_user?: string;
+    }) => request<DevSession>('POST', '/sessions', data),
+    close: (
+      id: string,
+      data?: {
+        credits_used?: number;
+        ready_to_merge?: boolean;
+        merge_reason?: string;
+        handover_notes?: string;
+      },
+    ) => request<DevSession>('POST', `/sessions/${id}/close`, data ?? {}),
+  },
+
+  // File locks
+  locks: {
+    list: () => request<FileLock[]>('GET', '/locks'),
+    check: (paths: string[]) =>
+      request<Array<{ path: string; locked: boolean; lock?: FileLock }>>('POST', '/locks/check', {
+        paths,
+      }),
+    claim: (data: {
+      path: string;
+      category?: string;
+      developer_name: string;
+      session_id?: string;
+      branch: string;
+      notes?: string;
+    }) => request<FileLock>('POST', '/locks', data),
+    release: (path: string, developer_name?: string) => {
+      const q = new URLSearchParams({ path });
+      if (developer_name) q.set('developer_name', developer_name);
+      return request<FileLock>('DELETE', `/locks?${q}`);
+    },
+  },
+
   // Tenant
   tenant: {
     create: (slug: string, name: string) =>
       request<{ id: string; api_key: string }>('POST', '/tenants', { slug, name }),
   },
 };
+
+export interface Developer {
+  id: string;
+  name: string;
+  github_user: string | null;
+  active: boolean;
+  created_at: string;
+}
+
+export interface DevSession {
+  id: string;
+  number: number;
+  developer_id: string;
+  developer_name: string;
+  module: string;
+  branch: string;
+  status: string;
+  plan: string[];
+  started_at: string;
+  ended_at: string | null;
+  credits_used: number | null;
+  ready_to_merge: boolean;
+  merge_reason: string | null;
+  handover_notes: string | null;
+  blockers: string | null;
+  requirements?: Array<{
+    id: string;
+    req_id: string;
+    description: string;
+    status: string;
+    proof: Record<string, unknown> | null;
+  }>;
+  files?: Array<{
+    id: string;
+    path: string;
+    change_type: string;
+    category: string;
+  }>;
+}
+
+export interface FileLock {
+  id: string;
+  path: string;
+  category: string;
+  developer_id: string;
+  developer_name: string;
+  session_id: string | null;
+  session_number: number | null;
+  branch: string;
+  notes: string | null;
+  locked_at: string;
+  released_at: string | null;
+}

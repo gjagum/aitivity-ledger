@@ -7,6 +7,8 @@ export const ActivityAction = z.enum([
   'task_update_documents',
   'task_status_change',
   'task_assign',
+  'session_start',
+  'session_end',
 ]);
 
 export type ActivityActionType = z.infer<typeof ActivityAction>;

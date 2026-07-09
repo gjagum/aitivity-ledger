@@ -146,8 +146,85 @@ async function seed() {
   }
 
   console.log(`Seeded ${sampleTasks.length} sample tasks with activity log.`);
+
+  // Developers + open session + locks (governance P0 demo)
+  const garry = await prisma.developer.upsert({
+    where: { tenantId_name: { tenantId: tenant.id, name: 'Garry Agum' } },
+    update: {},
+    create: { tenantId: tenant.id, name: 'Garry Agum', githubUser: 'garry-kinetic' },
+  });
+  const leo = await prisma.developer.upsert({
+    where: { tenantId_name: { tenantId: tenant.id, name: 'Leo Dizon' } },
+    update: {},
+    create: { tenantId: tenant.id, name: 'Leo Dizon', githubUser: 'leokinetic' },
+  });
+
+  const existingOpen = await prisma.devSession.findFirst({
+    where: { tenantId: tenant.id, status: 'open' },
+  });
+  if (!existingOpen) {
+    const session = await prisma.devSession.create({
+      data: {
+        tenantId: tenant.id,
+        number: 1,
+        developerId: garry.id,
+        module: 'Booking Management',
+        branch: 'dev/garry-kinetic/booking',
+        status: 'open',
+        plan: json([
+          'Wire orientation history startup migration',
+          'Release Contract Module locks',
+        ]),
+      },
+    });
+    await prisma.sessionRequirement.createMany({
+      data: [
+        {
+          sessionId: session.id,
+          reqId: 'REQ-001-001',
+          description: 'Wire orientation history DDL into startup',
+          status: 'complete',
+          proof: json({
+            file: 'backend/startup_migrations.py',
+            function: 'run_startup_migrations',
+            trace: 'app start → ensure_booking_orientation_history_table',
+          }),
+        },
+        {
+          sessionId: session.id,
+          reqId: 'REQ-001-002',
+          description: 'Browser QA: TM Orientation History list',
+          status: 'deferred',
+        },
+      ],
+    });
+    await prisma.fileLock.create({
+      data: {
+        tenantId: tenant.id,
+        path: 'backend/startup_migrations.py',
+        category: 'CORE',
+        developerId: garry.id,
+        sessionId: session.id,
+        branch: 'dev/garry-kinetic/booking',
+        notes: 'Additive orientation history hook',
+      },
+    });
+    await prisma.fileLock.create({
+      data: {
+        tenantId: tenant.id,
+        path: 'frontend/src/App.jsx',
+        category: 'CORE',
+        developerId: leo.id,
+        branch: 'dev/leokinetic/overtime-module',
+        notes: 'Additive overtime routes — coordinate before edit',
+      },
+    });
+    console.log('Seeded sample developers, open session #1, and file locks.');
+  }
+
   console.log(`\nDemo tenant API key: ${tenant.apiKey}`);
-  console.log(`Try: curl -H "Authorization: Bearer ${tenant.apiKey}" http://localhost:3001/tasks`);
+  console.log(`Try: curl -H "Authorization: Bearer ${tenant.apiKey}" http://localhost:3001/sessions?status=open`);
+  console.log(`MCP:  http://localhost:3001/mcp  (Authorization: Bearer <api-key>)`);
 
   await prisma.$disconnect();
 }

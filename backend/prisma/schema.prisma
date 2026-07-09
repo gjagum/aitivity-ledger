@@ -25,11 +25,117 @@ model Tenant {
   config    Json     @default("{}")
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
 
-  agents   Agent[]
-  tasks    Task[]
-  activity ActivityLog[]
+  agents      Agent[]
+  tasks       Task[]
+  activity    ActivityLog[]
+  developers  Developer[]
+  sessions    DevSession[]
+  fileLocks   FileLock[]
 
   @@map("tenants")
+}
+
+// Human developers (distinct from AI agents)
+model Developer {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  name       String
+  githubUser String?  @map("github_user")
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  tenant     Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  sessions   DevSession[]
+  fileLocks  FileLock[]
+
+  @@unique([tenantId, name])
+  @@map("developers")
+}
+
+// Developer work sessions (Kinetic TEAM_ACTIVITY_REPORT equivalent)
+model DevSession {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId      String    @map("tenant_id") @db.Uuid
+  number        Int
+  developerId   String    @map("developer_id") @db.Uuid
+  module        String
+  branch        String
+  status        String    @default("open") // open | closed | superseded | cancelled
+  plan          Json      @default("[]") // string[] checklist
+  startedAt     DateTime  @default(now()) @map("started_at") @db.Timestamptz
+  endedAt       DateTime? @map("ended_at") @db.Timestamptz
+  creditsUsed   Float?    @map("credits_used")
+  readyToMerge  Boolean   @default(false) @map("ready_to_merge")
+  mergeReason   String?   @map("merge_reason")
+  handoverNotes String?   @map("handover_notes")
+  blockers      String?
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  tenant       Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  developer    Developer         @relation(fields: [developerId], references: [id], onDelete: Cascade)
+  requirements SessionRequirement[]
+  files        SessionFile[]
+  locks        FileLock[]
+
+  @@unique([tenantId, number])
+  @@index([tenantId, status])
+  @@index([tenantId, developerId])
+  @@map("dev_sessions")
+}
+
+model SessionRequirement {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sessionId   String    @map("session_id") @db.Uuid
+  reqId       String    @map("req_id") // e.g. REQ-118-001
+  description String
+  status      String    @default("pending") // pending | complete | deferred | cancelled
+  proof       Json? // { file, function, trace } when complete
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  session DevSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, reqId])
+  @@index([sessionId, status])
+  @@map("session_requirements")
+}
+
+model SessionFile {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sessionId  String   @map("session_id") @db.Uuid
+  path       String
+  changeType String   @map("change_type") // added | modified | deleted
+  category   String // OWNED | SHARED | CORE | READ_ONLY
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  session DevSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@map("session_files")
+}
+
+// Exclusive file locks (Kinetic FILE_OWNERSHIP equivalent)
+model FileLock {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  path        String
+  category    String // OWNED | SHARED | CORE | READ_ONLY
+  developerId String    @map("developer_id") @db.Uuid
+  sessionId   String?   @map("session_id") @db.Uuid
+  branch      String
+  notes       String?
+  lockedAt    DateTime  @default(now()) @map("locked_at") @db.Timestamptz
+  releasedAt  DateTime? @map("released_at") @db.Timestamptz
+
+  tenant    Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  developer Developer   @relation(fields: [developerId], references: [id], onDelete: Cascade)
+  session   DevSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, path])
+  @@index([tenantId, releasedAt])
+  @@index([sessionId])
+  @@map("file_locks")
 }
 
 // Agents (AI agent identities within a tenant)
