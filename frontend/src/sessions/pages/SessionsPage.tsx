@@ -18,25 +18,23 @@ export function SessionsPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    let cancelled = false;
+    const ac = new AbortController();
     setLoading(true);
     api.sessions
-      .list({ status: status || undefined, limit: 100 })
+      .list({ status: status || undefined, limit: 100 }, ac.signal)
       .then((res) => {
-        if (cancelled) return;
         setItems(res.items);
         setCount(res.count);
         setError(null);
       })
       .catch((err) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load');
+        if (ac.signal.aborted) return;
+        setError(err instanceof Error ? err.message : 'Failed to load');
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!ac.signal.aborted) setLoading(false);
       });
-    return () => {
-      cancelled = true;
-    };
+    return () => ac.abort();
   }, [status]);
 
   return (

@@ -3,16 +3,29 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../generated/client.ts';
 import type { Prisma } from '../generated/client.ts';
 
-const connectionString = Deno.env.get('DATABASE_URL') ??
-  'postgres://ledger:ledger@localhost:5432/ledger';
+function resolveConnectionString(): string {
+  const raw = Deno.env.get('DATABASE_URL') ??
+    'postgres://ledger:ledger@localhost:5432/ledger';
+  // Prefer IPv4 loopback — avoids occasional localhost/IPv6 stalls under Deno.
+  return raw.replace('@localhost:', '@127.0.0.1:').replace('@localhost/', '@127.0.0.1/');
+}
 
-// Explicit pool — PrismaPg(connectionString) defaults can starve under
-// concurrent dashboard requests (tasks + agents + activity).
-const pool = new Pool({
+const connectionString = resolveConnectionString();
+
+// Shared pool for Prisma + hot-path raw SQL (auth / list endpoints).
+// Raw pg queries stay fast even when Prisma's adapter path stalls under Deno.
+export const pool = new Pool({
   connectionString,
   max: 10,
   idleTimeoutMillis: 30_000,
   connectionTimeoutMillis: 5_000,
+  keepAlive: true,
+  keepAliveInitialDelayMillis: 5_000,
+  application_name: 'aitivity-ledger',
+});
+
+pool.on('error', (err) => {
+  console.error('[db] idle client error', err.message);
 });
 
 const adapter = new PrismaPg(pool);

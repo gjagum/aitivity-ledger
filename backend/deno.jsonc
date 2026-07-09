@@ -1,6 +1,6 @@
 {
   "tasks": {
-    "dev": "deno run -A npm:prisma@^7 generate && deno run --env --watch -A src/main.ts",
+    "dev": "deno run -A scripts/free-port.ts && deno run -A npm:prisma@^7 generate && deno run --env --watch -A src/main.ts",
     "start": "deno run --env -A src/main.ts",
     "mcp": "deno run --env -A mcp/stdio.ts",
     "seed": "deno run --env -A src/seed.ts",

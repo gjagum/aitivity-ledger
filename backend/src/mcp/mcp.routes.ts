@@ -1,8 +1,7 @@
 import { Hono } from 'hono';
 import { McpServer } from 'npm:@modelcontextprotocol/sdk@1.25.3/server/mcp.js';
 import { WebStandardStreamableHTTPServerTransport } from 'npm:@modelcontextprotocol/sdk@1.25.3/server/webStandardStreamableHttp.js';
-import { prisma } from '../db.ts';
-import type { TenantContext } from '../_middleware/auth.ts';
+import { resolveTenant, type TenantContext } from '../_middleware/auth.ts';
 import { createLedgerMcpServer } from './tools.ts';
 
 type McpVars = { tenant: TenantContext };
@@ -21,22 +20,14 @@ mcp.all('/', async (c) => {
     return c.json({ error: 'Missing or invalid Authorization header' }, 401);
   }
 
-  const apiKey = auth.slice(7);
-  const tenant = await prisma.tenant.findUnique({
-    where: { apiKey },
-    select: { id: true, slug: true, name: true },
-  });
+  const tenant = await resolveTenant(auth.slice(7));
   if (!tenant) {
     return c.json({ error: 'Invalid API key' }, 401);
   }
 
-  c.set('tenant', {
-    tenant_id: tenant.id,
-    tenant_slug: tenant.slug,
-    tenant_name: tenant.name,
-  });
+  c.set('tenant', tenant);
 
-  const server: McpServer = createLedgerMcpServer(tenant.id);
+  const server: McpServer = createLedgerMcpServer(tenant.tenant_id);
   const transport = new WebStandardStreamableHTTPServerTransport();
   await server.connect(transport);
   return transport.handleRequest(c.req.raw);

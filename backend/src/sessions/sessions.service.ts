@@ -1,4 +1,4 @@
-import { json, prisma } from '../db.ts';
+import { json, pool, prisma } from '../db.ts';
 import type {
   DevSession,
   SessionFile,
@@ -80,25 +80,91 @@ export async function listSessions(
   tenantId: string,
   filters: { status?: string; developer_id?: string; limit: number; offset: number },
 ) {
-  const where = {
-    tenantId,
-    ...(filters.status ? { status: filters.status } : {}),
-    ...(filters.developer_id ? { developerId: filters.developer_id } : {}),
+  // Hot path uses raw SQL — Prisma's pg adapter has been stalling for seconds
+  // under Deno HTTP concurrency even though the same SQL via `pg` is <20ms.
+  const params: unknown[] = [tenantId];
+  const where: string[] = ['s.tenant_id = $1'];
+  if (filters.status) {
+    params.push(filters.status);
+    where.push(`s.status = $${params.length}`);
+  }
+  if (filters.developer_id) {
+    params.push(filters.developer_id);
+    where.push(`s.developer_id = $${params.length}`);
+  }
+  const whereSql = where.join(' AND ');
+  params.push(filters.limit);
+  const limitIdx = params.length;
+  params.push(filters.offset);
+  const offsetIdx = params.length;
+
+  type DbRow = {
+    id: string;
+    number: number;
+    developer_id: string;
+    developer_name: string;
+    module: string;
+    branch: string;
+    status: string;
+    plan: unknown;
+    started_at: Date;
+    ended_at: Date | null;
+    credits_used: number | null;
+    ready_to_merge: boolean;
+    merge_reason: string | null;
+    handover_notes: string | null;
+    blockers: string | null;
+    created_at: Date;
+    updated_at: Date;
   };
 
-  const [items, total] = await Promise.all([
-    prisma.devSession.findMany({
-      where,
-      include: { developer: { select: { id: true, name: true } } },
-      orderBy: [{ number: 'desc' }],
-      take: filters.limit,
-      skip: filters.offset,
-    }),
-    prisma.devSession.count({ where }),
-  ]);
+  const { rows } = await pool.query<DbRow>(
+    `
+    SELECT s.id, s.number, s.developer_id, d.name AS developer_name,
+           s.module, s.branch, s.status, s.plan, s.started_at, s.ended_at,
+           s.credits_used, s.ready_to_merge, s.merge_reason, s.handover_notes,
+           s.blockers, s.created_at, s.updated_at
+    FROM dev_sessions s
+    JOIN developers d ON d.id = s.developer_id
+    WHERE ${whereSql}
+    ORDER BY s.number DESC
+    LIMIT $${limitIdx} OFFSET $${offsetIdx}
+    `,
+    params,
+  );
+
+  const items: SessionRow[] = rows.map((r) => ({
+    id: r.id,
+    number: r.number,
+    developer_id: r.developer_id,
+    developer_name: r.developer_name,
+    module: r.module,
+    branch: r.branch,
+    status: r.status,
+    plan: Array.isArray(r.plan) ? (r.plan as string[]) : [],
+    started_at: r.started_at.toISOString(),
+    ended_at: r.ended_at?.toISOString() ?? null,
+    credits_used: r.credits_used,
+    ready_to_merge: r.ready_to_merge,
+    merge_reason: r.merge_reason,
+    handover_notes: r.handover_notes,
+    blockers: r.blockers,
+    created_at: r.created_at.toISOString(),
+    updated_at: r.updated_at.toISOString(),
+  }));
+
+  let total = items.length;
+  if (!(filters.offset === 0 && items.length < filters.limit)) {
+    const countParams = params.slice(0, params.length - 2);
+    const { rows: countRows } = await pool.query<{ count: string }>(
+      `SELECT count(*)::text AS count FROM dev_sessions s WHERE ${whereSql}`,
+      countParams,
+    );
+    total = Number(countRows[0]?.count ?? 0);
+  }
 
   return {
-    items: items.map((s) => toRow(s)),
+    items,
     count: total,
     limit: filters.limit,
     offset: filters.offset,

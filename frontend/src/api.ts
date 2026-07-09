@@ -16,7 +16,12 @@ export function hasApiKey(): boolean {
   return !!getApiKey();
 }
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+async function request<T>(
+  method: string,
+  path: string,
+  body?: unknown,
+  signal?: AbortSignal,
+): Promise<T> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   const key = getApiKey();
   if (key) headers['Authorization'] = `Bearer ${key}`;
@@ -25,6 +30,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     method,
     headers,
     body: body ? JSON.stringify(body) : undefined,
+    signal,
   });
 
   if (res.status === 401) {
@@ -107,15 +113,19 @@ export const api = {
 
   // Sessions (governance)
   sessions: {
-    list: (params?: { status?: string; developer_id?: string; limit?: number; offset?: number }) => {
+    list: (
+      params?: { status?: string; developer_id?: string; limit?: number; offset?: number },
+      signal?: AbortSignal,
+    ) => {
       const q = new URLSearchParams();
       if (params?.status) q.set('status', params.status);
       if (params?.developer_id) q.set('developer_id', params.developer_id);
       if (params?.limit) q.set('limit', String(params.limit));
       if (params?.offset) q.set('offset', String(params.offset));
-      return request<{ items: DevSession[]; count: number }>(`GET`, `/sessions?${q}`);
+      return request<{ items: DevSession[]; count: number }>(`GET`, `/sessions?${q}`, undefined, signal);
     },
-    get: (id: string) => request<DevSession>('GET', `/sessions/${id}`),
+    get: (id: string, signal?: AbortSignal) =>
+      request<DevSession>('GET', `/sessions/${id}`, undefined, signal),
     open: (data: {
       developer_name: string;
       module: string;
