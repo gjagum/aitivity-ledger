@@ -16,6 +16,26 @@ export function hasApiKey(): boolean {
   return !!getApiKey();
 }
 
+// Role tracks which credential type the current Bearer key represents, so the
+// router can gate admin vs tenant routes. It is not a security boundary — the
+// backend enforces that — only a UX/routing hint.
+const ROLE_KEY = 'ledger_role';
+
+export type Role = 'admin' | 'tenant';
+
+export function getRole(): Role | null {
+  const r = localStorage.getItem(ROLE_KEY);
+  return r === 'admin' || r === 'tenant' ? r : null;
+}
+
+export function setRole(role: Role) {
+  localStorage.setItem(ROLE_KEY, role);
+}
+
+export function clearRole() {
+  localStorage.removeItem(ROLE_KEY);
+}
+
 async function request<T>(
   method: string,
   path: string,
@@ -35,11 +55,12 @@ async function request<T>(
 
   if (res.status === 401) {
     clearApiKey();
-    // Bounce home on auth failure, but never reload to the page we're already
-    // on — otherwise an authenticated home route that 401s would reload itself
-    // forever (visible as constant flickering).
-    if (window.location.pathname !== '/') {
-      window.location.href = '/';
+    clearRole();
+    // Bounce to login on auth failure, but never reload the page we're already
+    // on — otherwise a login route that 401s (e.g. validating credentials) would
+    // reload itself forever (visible as constant flickering).
+    if (window.location.pathname !== '/login') {
+      window.location.href = '/login';
     }
     throw new Error('Unauthorized');
   }
@@ -166,12 +187,27 @@ export const api = {
     },
   },
 
-  // Tenant
+  // Tenant (admin-only on the backend)
   tenant: {
+    list: () =>
+      request<{ items: TenantSummary[] }>('GET', '/tenants'),
     create: (slug: string, name: string) =>
-      request<{ id: string; api_key: string }>('POST', '/tenants', { slug, name }),
+      request<TenantDetail>('POST', '/tenants', { slug, name }),
+    delete: (id: string) => request<{ deleted: string }>('DELETE', `/tenants/${id}`),
   },
 };
+
+export interface TenantSummary {
+  id: string;
+  slug: string;
+  name: string;
+  created_at: string;
+}
+
+export interface TenantDetail extends TenantSummary {
+  api_key: string;
+  config: Record<string, unknown>;
+}
 
 export interface Developer {
   id: string;

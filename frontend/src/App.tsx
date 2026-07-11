@@ -1,5 +1,8 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { Layout } from './_components/Layout.tsx';
+import { RequireRole } from './_components/RequireRole.tsx';
+import { LoginPage } from './auth/pages/LoginPage.tsx';
+import { AdminPage } from './admin/pages/AdminPage.tsx';
 import { DashboardPage } from './dashboard/pages/DashboardPage.tsx';
 import { TaskListPage } from './tasks/pages/TaskListPage.tsx';
 import { TaskDetailPage } from './tasks/pages/TaskDetailPage.tsx';
@@ -12,8 +15,28 @@ import { LocksPage } from './locks/pages/LocksPage.tsx';
 
 export default function App() {
   return (
-    <Layout>
-      <Routes>
+    <Routes>
+      {/* Public */}
+      <Route path="/login" element={<LoginPage />} />
+
+      {/* Admin console */}
+      <Route
+        path="/admin"
+        element={
+          <RequireRole role="admin">
+            <AdminPage />
+          </RequireRole>
+        }
+      />
+
+      {/* Tenant app — guarded, with shared layout */}
+      <Route
+        element={
+          <RequireRole role="tenant">
+            <Layout />
+          </RequireRole>
+        }
+      >
         <Route path="/" element={<DashboardPage />} />
         <Route path="/sessions" element={<SessionsPage />} />
         <Route path="/sessions/:id" element={<SessionDetailPage />} />
@@ -23,8 +46,10 @@ export default function App() {
         <Route path="/reports/weekly" element={<WeeklyReportPage />} />
         <Route path="/activity" element={<ActivityPage />} />
         <Route path="/agents" element={<AgentsPage />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </Layout>
+      </Route>
+
+      {/* Fallback */}
+      <Route path="*" element={<Navigate to="/login" replace />} />
+    </Routes>
   );
 }

@@ -1,19 +1,18 @@
-import { type ReactNode, useState } from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
+import { useState } from 'react';
+import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
   ListTodo,
   BarChart3,
   Activity,
   Bot,
-  Key,
   LogOut,
   Menu,
   X,
   Users,
   Lock,
 } from 'lucide-react';
-import { hasApiKey, setApiKey, clearApiKey } from '../api.ts';
+import { clearApiKey, clearRole } from '../api.ts';
 
 const navItems = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard', end: true },
@@ -25,10 +24,15 @@ const navItems = [
   { to: '/agents', icon: Bot, label: 'Agents' },
 ];
 
-export function Layout({ children }: { children: ReactNode }) {
+export function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [showKeyInput, setShowKeyInput] = useState(!hasApiKey());
   const navigate = useNavigate();
+
+  function logout() {
+    clearApiKey();
+    clearRole();
+    navigate('/login', { replace: true });
+  }
 
   return (
     <div className="flex h-screen bg-gray-50">
@@ -72,26 +76,13 @@ export function Layout({ children }: { children: ReactNode }) {
         </nav>
 
         <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-gray-200">
-          {showKeyInput ? (
-            <ApiKeyForm onSaved={() => setShowKeyInput(false)} />
-          ) : (
-            <div className="space-y-2">
-              <button
-                onClick={() => setShowKeyInput(true)}
-                className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg"
-              >
-                <Key className="w-4 h-4" />
-                Change API Key
-              </button>
-              <button
-                onClick={() => { clearApiKey(); navigate('/'); }}
-                className="flex items-center gap-2 w-full px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg"
-              >
-                <LogOut className="w-4 h-4" />
-                Disconnect
-              </button>
-            </div>
-          )}
+          <button
+            onClick={logout}
+            className="flex items-center gap-2 w-full px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg"
+          >
+            <LogOut className="w-4 h-4" />
+            Disconnect
+          </button>
         </div>
       </aside>
 
@@ -105,40 +96,9 @@ export function Layout({ children }: { children: ReactNode }) {
         </header>
 
         <main className="flex-1 overflow-auto p-6 lg:p-8">
-          {children}
+          <Outlet />
         </main>
       </div>
     </div>
-  );
-}
-
-function ApiKeyForm({ onSaved }: { onSaved: () => void }) {
-  const [key, setKey] = useState('');
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (key.trim()) {
-      setApiKey(key.trim());
-      onSaved();
-    }
-  };
-
-  return (
-    <form onSubmit={handleSubmit} className="space-y-2">
-      <label className="block text-xs font-medium text-gray-500">API Key</label>
-      <input
-        type="text"
-        value={key}
-        onChange={(e) => setKey(e.target.value)}
-        placeholder="Enter your API key"
-        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-      />
-      <button
-        type="submit"
-        className="w-full px-3 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700"
-      >
-        Connect
-      </button>
-    </form>
   );
 }

@@ -38,7 +38,8 @@ app.use('*', requestLogger);
 // Health check (public)
 app.get('/health', (c) => c.json({ status: 'ok', version: '0.2.0' }));
 
-// Mount tenant management (public — lock down in production)
+// Mount tenant management — admin-only (ADMIN_TOKEN Bearer), gated inside
+// the sub-app via adminMiddleware.
 app.route('/tenants', tenants);
 
 // MCP Streamable HTTP (auth inside handler — Bearer tenant API key)

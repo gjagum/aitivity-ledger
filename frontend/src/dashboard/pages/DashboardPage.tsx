@@ -9,9 +9,10 @@ import {
   ExternalLink,
   CheckCircle2,
   CircleDot,
+  Users,
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
-import { api } from '../../api.ts';
+import { api, type Developer, type DevSession } from '../../api.ts';
 
 const SHARED_CANVAS_URL =
   'https://cursor.com/dashboard/shared-canvases?shareId=canvas-n2DXjxqsw8R3CCxsYC6HXLzb';
@@ -29,27 +30,16 @@ interface TaskItem {
   };
 }
 
-interface ActivityEntry {
-  id: string;
-  task_id: string | null;
-  agent_name: string;
-  action: string;
-  data: Record<string, unknown>;
-  created_at: string;
-}
-
-interface AgentRow {
-  id: string;
+interface UserProgress {
+  developer_id: string;
   name: string;
-}
-
-interface AgentProgress {
-  name: string;
+  // Email isn't stored in the data model; the subtitle shows the GitHub handle.
+  subtitle: string;
   total: number;
-  done: number;
-  inProgress: number;
-  blocked: number;
-  pending: number;
+  closed: number;
+  open: number;
+  superseded: number;
+  cancelled: number;
 }
 
 const statusStyles: Record<string, string> = {
@@ -60,14 +50,22 @@ const statusStyles: Record<string, string> = {
   abandoned: 'bg-gray-100 text-gray-500',
 };
 
+// DevSession.status: open | closed | superseded | cancelled
+const outcomeStyles: Record<string, string> = {
+  open: 'bg-amber-100 text-amber-700',
+  closed: 'bg-green-100 text-green-700',
+  superseded: 'bg-indigo-100 text-indigo-700',
+  cancelled: 'bg-gray-100 text-gray-500',
+};
+
 export function DashboardPage() {
   const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [totalTasks, setTotalTasks] = useState(0);
-  const [agents, setAgents] = useState<AgentRow[]>([]);
-  const [activity, setActivity] = useState<ActivityEntry[]>([]);
+  const [developers, setDevelopers] = useState<Developer[]>([]);
+  const [sessions, setSessions] = useState<DevSession[]>([]);
   const [loadingTasks, setLoadingTasks] = useState(true);
-  const [loadingAgents, setLoadingAgents] = useState(true);
-  const [loadingActivity, setLoadingActivity] = useState(true);
+  const [loadingDevelopers, setLoadingDevelopers] = useState(true);
+  const [loadingSessions, setLoadingSessions] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -89,28 +87,30 @@ export function DashboardPage() {
         if (!cancelled) setLoadingTasks(false);
       });
 
-    api.agents
+    api.developers
       .list()
       .then((rows) => {
-        if (!cancelled) setAgents(rows as AgentRow[]);
+        if (!cancelled) setDevelopers(rows);
       })
       .catch(() => {
-        /* agents section can stay empty */
+        /* users section can stay empty */
       })
       .finally(() => {
-        if (!cancelled) setLoadingAgents(false);
+        if (!cancelled) setLoadingDevelopers(false);
       });
 
-    api.activity
-      .list({ limit: 12 })
-      .then((rows) => {
-        if (!cancelled) setActivity(rows as ActivityEntry[]);
+    // Pull a generous window of AI work sessions so the per-user rollup
+    // reflects everyone's progression, not just the most recent page.
+    api.sessions
+      .list({ limit: 200 })
+      .then((res) => {
+        if (!cancelled) setSessions(res.items);
       })
       .catch(() => {
-        /* activity is secondary */
+        /* sessions section can stay empty */
       })
       .finally(() => {
-        if (!cancelled) setLoadingActivity(false);
+        if (!cancelled) setLoadingSessions(false);
       });
 
     return () => {
@@ -136,7 +136,16 @@ export function DashboardPage() {
     ? Math.round((tasksDone / tasks.length) * 100)
     : 0;
 
-  const agentProgress = buildAgentProgress(tasks, agents);
+  const userProgress = buildUserProgress(sessions, developers);
+  // Open sessions — each developer's current AI work — most stale first so the
+  // longest-running in-flight work surfaces to the top.
+  const inFlight = sessions
+    .filter((s) => s.status === 'open')
+    .sort((a, b) => new Date(a.started_at).getTime() - new Date(b.started_at).getTime());
+  // developer_id → @handle, for the in-flight subtitle.
+  const developerHandles = new Map(
+    developers.map((d) => [d.id, d.github_user ? `@${d.github_user}` : null]),
+  );
   const activeTasks = tasks.filter(
     (t) => t.status === 'in_progress' || t.status === 'blocked',
   );
@@ -171,11 +180,11 @@ export function DashboardPage() {
       loading: loadingTasks,
     },
     {
-      label: 'Agents',
-      value: agents.length,
-      icon: Bot,
+      label: 'Users',
+      value: developers.length,
+      icon: Users,
       color: 'text-purple-600 bg-purple-100',
-      loading: loadingAgents,
+      loading: loadingDevelopers,
     },
   ];
 
@@ -261,62 +270,76 @@ export function DashboardPage() {
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         <section className="bg-white rounded-xl border border-gray-200 overflow-hidden">
           <div className="px-6 py-4 border-b border-gray-200">
-            <h2 className="text-sm font-semibold text-gray-900">Progress by agent</h2>
-            <p className="text-xs text-gray-500 mt-0.5">Task status breakdown per agent</p>
+            <h2 className="text-sm font-semibold text-gray-900">Progress by user</h2>
+            <p className="text-xs text-gray-500 mt-0.5">
+              AI work sessions per developer, by outcome
+            </p>
           </div>
-          {loadingTasks || loadingAgents ? (
-            <div className="p-6 space-y-3">
+          {loadingSessions || loadingDevelopers ? (
+            <div className="p-6 space-y-4">
               {[...Array(3)].map((_, i) => (
-                <div key={i} className="h-14 bg-gray-100 rounded-lg animate-pulse" />
+                <div key={i} className="h-10 bg-gray-100 rounded-lg animate-pulse" />
               ))}
             </div>
-          ) : agentProgress.length === 0 ? (
-            <p className="p-6 text-sm text-gray-500">No agents yet</p>
+          ) : userProgress.length === 0 || userProgress.every((u) => u.total === 0) ? (
+            <p className="p-6 text-sm text-gray-500">No sessions recorded yet</p>
           ) : (
-            <ul className="divide-y divide-gray-100">
-              {agentProgress.map((agent) => {
-                const donePct = agent.total
-                  ? Math.round((agent.done / agent.total) * 100)
-                  : 0;
-                return (
-                  <li key={agent.name} className="px-6 py-4">
-                    <div className="flex items-center justify-between gap-3 mb-2">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <Bot className="w-4 h-4 text-gray-400 shrink-0" />
-                        <span className="font-mono text-sm font-medium text-gray-900 truncate">
-                          {agent.name}
+            <div className="p-6 space-y-3.5">
+              {userProgress
+                .filter((u) => u.total > 0)
+                .map((user) => {
+                  const total = user.total;
+                  return (
+                    <div key={user.developer_id} className="grid grid-cols-12 gap-3 items-center">
+                      <div className="col-span-4 sm:col-span-3 min-w-0">
+                        <Link to="/sessions" className="block hover:underline">
+                          <span className="block text-sm font-medium text-gray-900 truncate">
+                            {user.name}
+                          </span>
+                        </Link>
+                        <span className="block text-xs text-gray-500 truncate">
+                          {user.subtitle}
                         </span>
                       </div>
-                      <span className="text-xs text-gray-500 shrink-0">
-                        {agent.done}/{agent.total} done · {donePct}%
-                      </span>
+                      <div className="col-span-6 sm:col-span-7">
+                        <div className="h-5 w-full bg-gray-100 rounded-full overflow-hidden flex">
+                          {total > 0 &&
+                            (
+                              [
+                                ['closed', user.closed, 'bg-green-500'],
+                                ['open', user.open, 'bg-amber-400'],
+                                ['superseded', user.superseded, 'bg-indigo-400'],
+                                ['cancelled', user.cancelled, 'bg-gray-400'],
+                              ] as const
+                            ).map(
+                              ([key, value, color]) =>
+                                value > 0 && (
+                                  <div
+                                    key={key}
+                                    className={`${color} h-full transition-all`}
+                                    style={{ width: `${(value / total) * 100}%` }}
+                                    title={`${key}: ${value}`}
+                                  />
+                                ),
+                            )}
+                        </div>
+                      </div>
+                      <div className="col-span-2 text-right">
+                        <span className="text-xs text-gray-500">
+                          <span className="font-semibold text-gray-900">{total}</span> session
+                          {total === 1 ? '' : 's'}
+                        </span>
+                      </div>
                     </div>
-                    <div className="h-2 bg-gray-100 rounded-full overflow-hidden flex">
-                      {agent.total > 0 && (
-                        <>
-                          <div
-                            className="bg-green-500 h-full"
-                            style={{ width: `${(agent.done / agent.total) * 100}%` }}
-                          />
-                          <div
-                            className="bg-amber-400 h-full"
-                            style={{ width: `${(agent.inProgress / agent.total) * 100}%` }}
-                          />
-                          <div
-                            className="bg-red-400 h-full"
-                            style={{ width: `${(agent.blocked / agent.total) * 100}%` }}
-                          />
-                        </>
-                      )}
-                    </div>
-                    <div className="flex gap-3 mt-2 text-xs text-gray-500">
-                      <span>{agent.inProgress} active</span>
-                      <span>{agent.blocked} blocked</span>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
+                  );
+                })}
+              <div className="flex flex-wrap gap-x-4 gap-y-1 pt-3 mt-1 border-t border-gray-100 text-xs text-gray-500">
+                <LegendDot color="bg-green-500" label="Closed" />
+                <LegendDot color="bg-amber-400" label="Open" />
+                <LegendDot color="bg-indigo-400" label="Superseded" />
+                <LegendDot color="bg-gray-400" label="Cancelled" />
+              </div>
+            </div>
           )}
         </section>
 
@@ -383,48 +406,145 @@ export function DashboardPage() {
       <section className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
           <div>
-            <h2 className="text-sm font-semibold text-gray-900">Recent activity</h2>
-            <p className="text-xs text-gray-500 mt-0.5">Latest agent events</p>
+            <h2 className="text-sm font-semibold text-gray-900">Currently in flight</h2>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Open AI work sessions per developer
+            </p>
           </div>
-          <Link to="/activity" className="text-xs font-medium text-indigo-600 hover:text-indigo-800">
-            Full log
+          <Link to="/sessions?status=open" className="text-xs font-medium text-indigo-600 hover:text-indigo-800">
+            View all
           </Link>
         </div>
-        {loadingActivity ? (
-          <div className="p-6 space-y-2">
+        {loadingSessions ? (
+          <div className="p-6 space-y-3">
+            {[...Array(3)].map((_, i) => (
+              <div key={i} className="h-10 bg-gray-100 rounded-lg animate-pulse" />
+            ))}
+          </div>
+        ) : inFlight.length === 0 ? (
+          <p className="p-6 text-sm text-gray-500">No open sessions — nothing in flight.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead className="bg-gray-50 text-left text-gray-500">
+                <tr>
+                  <th className="px-6 py-3 font-medium">Developer</th>
+                  <th className="px-6 py-3 font-medium">Module</th>
+                  <th className="px-6 py-3 font-medium">Started</th>
+                  <th className="px-6 py-3 font-medium whitespace-nowrap">Open for</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {inFlight.map((s) => {
+                  const handle = developerHandles.get(s.developer_id);
+                  const age = openFor(s.started_at);
+                  return (
+                    <tr key={s.id} className="hover:bg-gray-50">
+                      <td className="px-6 py-3">
+                        <Link
+                          to={`/sessions/${s.id}`}
+                          className="block group"
+                        >
+                          <span className="block text-sm font-medium text-gray-900 group-hover:underline">
+                            {s.developer_name}
+                          </span>
+                          {handle && (
+                            <span className="block text-xs text-gray-500 font-mono">
+                              {handle}
+                            </span>
+                          )}
+                        </Link>
+                      </td>
+                      <td className="px-6 py-3 text-gray-700 max-w-xs truncate">{s.module}</td>
+                      <td className="px-6 py-3 text-gray-500 whitespace-nowrap">
+                        {formatDistanceToNow(new Date(s.started_at), { addSuffix: true })}
+                      </td>
+                      <td className="px-6 py-3 whitespace-nowrap">
+                        <span
+                          className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${age.style}`}
+                          title={`Started ${new Date(s.started_at).toLocaleString()}`}
+                        >
+                          {age.label}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      <section className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+          <div>
+            <h2 className="text-sm font-semibold text-gray-900">Session log</h2>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Recent AI work sessions, most recent first
+            </p>
+          </div>
+          <Link
+            to="/sessions"
+            className="text-xs font-medium text-indigo-600 hover:text-indigo-800"
+          >
+            View all
+          </Link>
+        </div>
+        {loadingSessions ? (
+          <div className="p-6 space-y-3">
             {[...Array(5)].map((_, i) => (
               <div key={i} className="h-10 bg-gray-100 rounded-lg animate-pulse" />
             ))}
           </div>
-        ) : activity.length === 0 ? (
-          <p className="p-6 text-sm text-gray-500">No activity recorded yet</p>
+        ) : sessions.length === 0 ? (
+          <p className="p-6 text-sm text-gray-500">No sessions recorded yet</p>
         ) : (
-          <ul className="divide-y divide-gray-100">
-            {activity.map((entry) => (
-              <li key={entry.id} className="px-6 py-3 flex items-center gap-3 text-sm">
-                <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700 shrink-0">
-                  {entry.action.replace(/_/g, ' ')}
-                </span>
-                <span className="font-mono text-xs text-gray-500 shrink-0">{entry.agent_name}</span>
-                <span className="text-gray-700 truncate flex-1 min-w-0">
-                  {(entry.data?.summary as string)
-                    ?? (entry.data?.note as string)
-                    ?? '—'}
-                </span>
-                {entry.task_id && (
-                  <Link
-                    to={`/tasks/${entry.task_id}`}
-                    className="text-xs text-indigo-600 hover:text-indigo-800 font-mono shrink-0"
-                  >
-                    #{entry.task_id.slice(0, 8)}
-                  </Link>
-                )}
-                <span className="text-xs text-gray-400 whitespace-nowrap shrink-0">
-                  {formatDistanceToNow(new Date(entry.created_at), { addSuffix: true })}
-                </span>
-              </li>
-            ))}
-          </ul>
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead className="bg-gray-50 text-left text-gray-500">
+                <tr>
+                  <th className="px-6 py-3 font-medium w-16">#</th>
+                  <th className="px-6 py-3 font-medium">Developer</th>
+                  <th className="px-6 py-3 font-medium">Module</th>
+                  <th className="px-6 py-3 font-medium">Outcome</th>
+                  <th className="px-6 py-3 font-medium whitespace-nowrap">Started</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {sessions.slice(0, 10).map((s) => (
+                  <tr key={s.id} className="hover:bg-gray-50">
+                    <td className="px-6 py-3">
+                      <Link
+                        to={`/sessions/${s.id}`}
+                        className="font-medium text-indigo-600 hover:underline"
+                      >
+                        #{s.number}
+                      </Link>
+                    </td>
+                    <td className="px-6 py-3 text-gray-900 whitespace-nowrap">
+                      {s.developer_name}
+                    </td>
+                    <td className="px-6 py-3 text-gray-700 max-w-xs truncate">
+                      {s.module}
+                    </td>
+                    <td className="px-6 py-3">
+                      <span
+                        className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
+                          outcomeStyles[s.status] ?? 'bg-gray-100 text-gray-600'
+                        }`}
+                      >
+                        {s.status}
+                      </span>
+                    </td>
+                    <td className="px-6 py-3 text-gray-500 whitespace-nowrap">
+                      {formatDistanceToNow(new Date(s.started_at), { addSuffix: true })}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </section>
 
@@ -438,35 +558,80 @@ export function DashboardPage() {
   );
 }
 
-function buildAgentProgress(tasks: TaskItem[], agents: AgentRow[]): AgentProgress[] {
-  const byName = new Map<string, AgentProgress>();
+/**
+ * Turn a session start time into an "Open for X" label + urgency color.
+ * Green = fresh (today), amber = a few days, red = stale (over a week) —
+ * so the team can spot in-flight work that's been dragging.
+ */
+function openFor(startedAt: string): { label: string; style: string } {
+  const ms = Date.now() - new Date(startedAt).getTime();
+  const days = ms / 86_400_000;
+  const label =
+    days < 1 ? 'Open < 1d' : days < 14 ? `Open ${Math.floor(days)}d` : `Open ${Math.floor(days / 7)}w`;
+  const style =
+    days < 1
+      ? 'bg-green-100 text-green-700'
+      : days < 7
+        ? 'bg-amber-100 text-amber-700'
+        : 'bg-red-100 text-red-700';
+  return { label, style };
+}
 
-  for (const agent of agents) {
-    byName.set(agent.name, {
-      name: agent.name,
+/**
+ * Roll up each developer's AI work sessions so the team can see who is driving
+ * the AI and how their sessions break down by outcome.
+ *
+ * Sessions are the right unit here: each DevSession belongs to a human developer
+ * and represents one stint of AI-assisted work (a module, a branch, a plan,
+ * credits burned, ready-to-merge state). Tasks are AI-agent work products and
+ * don't carry a developer link, so we don't fold them in.
+ */
+function buildUserProgress(sessions: DevSession[], developers: Developer[]): UserProgress[] {
+  const byDeveloper = new Map<string, UserProgress>();
+  for (const dev of developers) {
+    byDeveloper.set(dev.id, {
+      developer_id: dev.id,
+      name: dev.name,
+      // Email isn't part of the data model; show the GitHub handle instead.
+      subtitle: dev.github_user ? `@${dev.github_user}` : '—',
       total: 0,
-      done: 0,
-      inProgress: 0,
-      blocked: 0,
-      pending: 0,
+      closed: 0,
+      open: 0,
+      superseded: 0,
+      cancelled: 0,
     });
   }
 
-  for (const task of tasks) {
-    const name = task.agent_name || 'unknown';
-    let row = byName.get(name);
+  const empty = (id: string, name: string): UserProgress => ({
+    developer_id: id,
+    name,
+    subtitle: '—',
+    total: 0,
+    closed: 0,
+    open: 0,
+    superseded: 0,
+    cancelled: 0,
+  });
+
+  for (const session of sessions) {
+    let row = byDeveloper.get(session.developer_id);
     if (!row) {
-      row = { name, total: 0, done: 0, inProgress: 0, blocked: 0, pending: 0 };
-      byName.set(name, row);
+      // Session references a developer not in the roster (e.g. deleted). Synthesize
+      // a row from the session's denormalized developer_name so they aren't hidden.
+      row = empty(session.developer_id, session.developer_name);
+      byDeveloper.set(session.developer_id, row);
     }
     row.total += 1;
-    if (task.status === 'done') row.done += 1;
-    else if (task.status === 'in_progress') row.inProgress += 1;
-    else if (task.status === 'blocked') row.blocked += 1;
-    else row.pending += 1;
+    if (session.status === 'closed') row.closed += 1;
+    else if (session.status === 'open') row.open += 1;
+    else if (session.status === 'superseded') row.superseded += 1;
+    else if (session.status === 'cancelled') row.cancelled += 1;
   }
 
-  return [...byName.values()].sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
+  // Most active developers first, then alphabetically.
+  return [...byDeveloper.values()].sort(
+    (a, b) => b.total - a.total || a.name.localeCompare(b.name),
+  );
 }
 
 /** Seed data may contain duplicate summaries; keep one row per agent+summary for the active list. */
